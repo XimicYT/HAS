@@ -179,7 +179,28 @@ io.on("connection", (socket) => {
     room.players.forEach((p) => io.to(p.id).emit("gameStateUpdated", getSanitizedState(room, p.id)));
   });
 
-  socket.on("disconnect", () => { /* ... existing disconnect logic ... */ });
+  socket.on('disconnect', () => {
+        console.log(`Player disconnected: ${socket.id}`);
+        for (const roomCode in rooms) {
+            const room = rooms[roomCode];
+            const playerIndex = room.players.findIndex(p => p.id === socket.id);
+            
+            if (playerIndex !== -1) {
+                room.players.splice(playerIndex, 1); // Remove player
+                
+                if (room.players.length === 0) {
+                    delete rooms[roomCode]; // Destroy empty room
+                } else {
+                    // Reassign host if the host left
+                    if (room.host === socket.id) {
+                        room.host = room.players[0].id;
+                    }
+                    io.to(roomCode).emit('roomUpdated', room);
+                }
+                break;
+            }
+        }
+    });
 });
 
 server.listen(process.env.PORT || 3000, () => console.log(`Server running`));
