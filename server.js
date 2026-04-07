@@ -61,17 +61,17 @@ function isAdjacent(pos1, pos2) {
 
 // --- SOCKET LOGIC ---
 io.on("connection", (socket) => {
-  console.log(`Player connected: ${socket.id}`);
+  console.log(`Operator connected: ${socket.id}`);
 
   socket.on("createRoom", (playerName) => {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let code = "";
     for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
 
     rooms[code] = {
       id: code,
       host: socket.id,
-      players: [{ id: socket.id, name: playerName || "Player 1", role: "Hider" }],
+      players: [{ id: socket.id, name: playerName || "Agent_01", role: "Hider" }],
       status: "waiting",
       gameState: null,
     };
@@ -81,8 +81,8 @@ io.on("connection", (socket) => {
 
   socket.on("joinRoom", ({ roomCode, playerName }) => {
     const room = rooms[roomCode.toUpperCase()];
-    if (!room) return socket.emit("errorMsg", "Room not found.");
-    if (room.status !== "waiting") return socket.emit("errorMsg", "Game already started.");
+    if (!room) return socket.emit("errorMsg", "Signal not found.");
+    if (room.status !== "waiting") return socket.emit("errorMsg", "Operation already underway.");
     room.players.push({ id: socket.id, name: playerName, role: "Seeker" });
     socket.join(room.id);
     io.to(room.id).emit("roomUpdated", room);
@@ -104,13 +104,13 @@ io.on("connection", (socket) => {
     if (!room || room.status !== "playing") return;
 
     const player = room.players.find((p) => p.id === socket.id);
-    if (!player || room.gameState.turn !== player.role) return socket.emit("errorMsg", "It is not your turn!");
+    if (!player || room.gameState.turn !== player.role) return socket.emit("errorMsg", "Sequence violation: Not your turn.");
 
     const currentPos = room.gameState.positions[socket.id];
 
     // Check Rules: Is the move adjacent?
     if (!isAdjacent(currentPos, coord)) {
-      return socket.emit("errorMsg", "Invalid Move: You can only move to adjacent sectors!");
+      return socket.emit("errorMsg", "Invalid Vector: Sector not adjacent.");
     }
 
     // Apply Move
@@ -120,15 +120,15 @@ io.on("connection", (socket) => {
 
     // Turn Toggle & Win Condition Logic
     if (player.role === "Hider") {
-      room.gameState.logs.push(`Round ${room.gameState.round}: The Ghost has moved.`);
+      room.gameState.logs.push(`[Round ${room.gameState.round}] The Ghost has shifted sectors.`);
       room.gameState.turn = "Seeker";
     } else {
-      room.gameState.logs.push(`${player.name} moved to ${coord}.`);
+      room.gameState.logs.push(`Agent ${player.name} deployed to Sector ${coord}.`);
       
       // DID THEY CATCH THE GHOST?
       if (coord === ghostPos) {
         room.status = "game_over";
-        room.gameState.logs.push(`🚨 TARGET SECURED! ${player.name} apprehended the Ghost at ${coord}! Seekers win!`);
+        room.gameState.logs.push(`🚨 TARGET SECURED! Agent ${player.name} intercepted the Ghost at ${coord}! Mission Success!`);
       } else {
         room.gameState.turn = "Hider";
         room.gameState.round++;
@@ -145,52 +145,49 @@ io.on("connection", (socket) => {
 
     const player = room.players.find(p => p.id === socket.id);
     if (!player || player.role !== "Seeker") return;
-    if (room.gameState.turn !== "Seeker") return socket.emit("errorMsg", "Wait for your turn!");
+    if (room.gameState.turn !== "Seeker") return socket.emit("errorMsg", "Sequence violation: Not your turn.");
 
     const ghost = room.players.find(p => p.role === "Hider");
     const ghostPos = room.gameState.positions[ghost.id];
     const seekerPos = room.gameState.positions[player.id];
 
-    if (!ghostPos || !seekerPos) return socket.emit("errorMsg", "You must deploy to the map first!");
+    if (!ghostPos || !seekerPos) return socket.emit("errorMsg", "Deployment required before using assets.");
 
     if (ability === "ping") {
-      const terrainType = room.gameState.map[ghostPos].split('-')[1]; // Extracts 'city', 'water', etc.
-      room.gameState.logs.push(`${player.name} used Ping: The Ghost is currently in a [${terrainType.toUpperCase()}] sector.`);
+      const terrainType = room.gameState.map[ghostPos].split('-')[1]; 
+      room.gameState.logs.push(`Agent ${player.name} ran PING protocol: Target is in a [${terrainType.toUpperCase()}] sector.`);
     } else if (ability === "radar") {
-      // Calculate relative direction
       const gx = MAP_COLS.indexOf(ghostPos[0]);
       const gy = parseInt(ghostPos.substring(1));
       const sx = MAP_COLS.indexOf(seekerPos[0]);
       const sy = parseInt(seekerPos.substring(1));
 
       let dir = "";
-      if (gy < sy) dir += "North";
-      if (gy > sy) dir += "South";
-      if (gx > sx) dir += dir ? "-East" : "East";
-      if (gx < sx) dir += dir ? "-West" : "West";
+      if (gy < sy) dir += "NORTH";
+      if (gy > sy) dir += "SOUTH";
+      if (gx > sx) dir += dir ? "-EAST" : "EAST";
+      if (gx < sx) dir += dir ? "-WEST" : "WEST";
       
-      room.gameState.logs.push(`${player.name} used Radar: A faint signal bounced from the [${dir}].`);
+      room.gameState.logs.push(`Agent ${player.name} initiated RADAR sweep: Anomaly detected to the [${dir}].`);
     }
 
-    // Using an ability consumes the Seeker's turn
     room.gameState.turn = "Hider";
     room.gameState.round++;
     room.players.forEach((p) => io.to(p.id).emit("gameStateUpdated", getSanitizedState(room, p.id)));
   });
 
   socket.on("disconnect", () => {
-    console.log(`Player disconnected: ${socket.id}`);
+    console.log(`Operator disconnected: ${socket.id}`);
     for (const roomCode in rooms) {
       const room = rooms[roomCode];
       const playerIndex = room.players.findIndex((p) => p.id === socket.id);
 
       if (playerIndex !== -1) {
-        room.players.splice(playerIndex, 1); // Remove player
+        room.players.splice(playerIndex, 1);
 
         if (room.players.length === 0) {
-          delete rooms[roomCode]; // Destroy empty room
+          delete rooms[roomCode];
         } else {
-          // Reassign host if the host left
           if (room.host === socket.id) {
             room.host = room.players[0].id;
           }
@@ -201,4 +198,4 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(process.env.PORT || 3000, () => console.log(`Server running`));
+server.listen(process.env.PORT || 3000, () => console.log(`Server Uplink Active`));
