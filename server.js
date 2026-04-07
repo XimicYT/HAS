@@ -63,8 +63,7 @@ function isAdjacent(pos1, pos2) {
 io.on("connection", (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
-  // [Keep your existing createRoom, joinRoom, and startGame events here]
-  socket.on("createRoom", (playerName) => { /* Same as before */ 
+  socket.on("createRoom", (playerName) => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let code = "";
     for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -80,7 +79,7 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomUpdated", rooms[code]);
   });
 
-  socket.on("joinRoom", ({ roomCode, playerName }) => { /* Same as before */
+  socket.on("joinRoom", ({ roomCode, playerName }) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return socket.emit("errorMsg", "Room not found.");
     if (room.status !== "waiting") return socket.emit("errorMsg", "Game already started.");
@@ -89,7 +88,7 @@ io.on("connection", (socket) => {
     io.to(room.id).emit("roomUpdated", room);
   });
 
-  socket.on("startGame", (roomCode) => { /* Same as before */
+  socket.on("startGame", (roomCode) => {
     const room = rooms[roomCode];
     if (room && room.host === socket.id && room.players.length >= 2) {
       room.status = "playing";
@@ -179,28 +178,27 @@ io.on("connection", (socket) => {
     room.players.forEach((p) => io.to(p.id).emit("gameStateUpdated", getSanitizedState(room, p.id)));
   });
 
-  socket.on('disconnect', () => {
-        console.log(`Player disconnected: ${socket.id}`);
-        for (const roomCode in rooms) {
-            const room = rooms[roomCode];
-            const playerIndex = room.players.findIndex(p => p.id === socket.id);
-            
-            if (playerIndex !== -1) {
-                room.players.splice(playerIndex, 1); // Remove player
-                
-                if (room.players.length === 0) {
-                    delete rooms[roomCode]; // Destroy empty room
-                } else {
-                    // Reassign host if the host left
-                    if (room.host === socket.id) {
-                        room.host = room.players[0].id;
-                    }
-                    io.to(roomCode).emit('roomUpdated', room);
-                }
-                break;
-            }
+  socket.on("disconnect", () => {
+    console.log(`Player disconnected: ${socket.id}`);
+    for (const roomCode in rooms) {
+      const room = rooms[roomCode];
+      const playerIndex = room.players.findIndex((p) => p.id === socket.id);
+
+      if (playerIndex !== -1) {
+        room.players.splice(playerIndex, 1); // Remove player
+
+        if (room.players.length === 0) {
+          delete rooms[roomCode]; // Destroy empty room
+        } else {
+          // Reassign host if the host left
+          if (room.host === socket.id) {
+            room.host = room.players[0].id;
+          }
+          io.to(roomCode).emit("roomUpdated", room);
         }
-    });
+      }
+    }
+  });
 });
 
 server.listen(process.env.PORT || 3000, () => console.log(`Server running`));
